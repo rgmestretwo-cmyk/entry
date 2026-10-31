@@ -1,4 +1,4 @@
-const CACHE = 'entry-v9';
+const CACHE = 'entry-v10';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   // Bypass the browser HTTP cache so the new files (not stale ones) get cached.

@@ -83,6 +83,8 @@ h1.q{font-size:28px;margin:2px 0 12px;line-height:1.15}
 .mrow{margin:0 0 12px}
 .mrow .btns button{padding:10px 4px;font-size:17px;min-height:44px}
 textarea{font:inherit;font-size:16px;width:100%;min-height:120px;padding:10px;border:2px solid #999;border-radius:12px}
+.card .tapln{cursor:pointer;background:#fff6d6;border:1px dashed #c98a12;border-radius:8px;padding:4px 6px;margin:2px -6px 0}
+.card .tapln .cue{color:#1f5f3f;font-weight:700;white-space:nowrap}
 .gatemsg{display:none;background:#fff1d6;border:2px solid #c98a12;border-radius:12px;padding:8px 10px;font-size:16px;font-weight:600;line-height:1.3;margin:8px 0 0;color:#111}
 .okmsg{background:#e3f2e6;border:2px solid #1f5f3f;border-radius:12px;padding:8px 10px;font-size:16px;font-weight:600;margin:8px 0 0}
 .ok{color:#1f5f3f;font-weight:700}
@@ -102,7 +104,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v9';
+var APP_VERSION = 'v10';
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
@@ -110,6 +112,7 @@ function load(k, d){ try{ var v = localStorage.getItem('entry.'+k); return v ? J
 function save(k, v){ localStorage.setItem('entry.'+k, JSON.stringify(v)); }
 var mem = load('mem', []);
 if(!Array.isArray(mem)) mem=[];
+(function(){ var ch=false; mem.forEach(function(m){ if('amount' in m){ delete m.amount; ch=true; } }); if(ch) save('mem', mem); })(); // memorized items never keep an amount
 var pendingImport=null, memFlash='';
 var lists = load('lists_v2', null);
 if(!lists){ lists = JSON.parse(JSON.stringify(SEED)); save('lists_v2', lists); }
@@ -161,7 +164,6 @@ function renderInner(){
   app.className = screen==='home' ? 'home' : screen==='memlist' ? 'fixedh' : '';
   if(screen==='memlist') return renderMemList();
   if(screen==='memmanage') return renderMemManage();
-  if(screen==='memask') return renderMemAsk();
   if(screen==='memimport') return renderMemImport();
   if(screen==='home') return renderHome();
   if(screen==='field') return renderField();
@@ -264,16 +266,19 @@ function cardLines(e){
 function renderSummary(){
   if(draft.memId) return renderMemSummary();
   var e = flat(draft);
-  var h = hdr(draft.editId?'Editing saved entry':draft.fromMem?'⭐ From memorized':'Check and save')+'<h1 class="sm">'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
+  var h = hdr(draft.editId?'Editing saved entry':draft.fromMem?'⭐ From memorized':'Check and save')+'<h1 class="sm">'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e, '', draft.fromMem?{memoTap:true}:null)+
     '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
   app.innerHTML=h;
   $('save').onclick=function(){ var d=findDup(e); if(d){ screen='dup'; dupOf=d; render(); } else commit(e); };
   $('fix').onclick=function(){ screen='fixpick'; renderFixPick(); };
+  if($('memoLine')) $('memoLine').onclick=function(){ draft.step=FIELDS[draft.type].findIndex(function(f){return f[0]==='memo';}); editing=true; screen='field'; save('draft',draft); render(); window.scrollTo(0,0); };
   $('cancel').onclick=function(){
     if(draft.editId){ if(confirm('Discard changes?')){ viewId=draft.editId; draft=null; save('draft',null); screen='view'; render(); } return; }
     if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
 }
-function cardHTML(e, extra){ return '<div class="card">'+cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+(extra||'')+'</div>'; }
+function cardHTML(e, extra, opt){ return '<div class="card">'+cardLines(e).map(function(l){
+    if(opt && opt.memoTap && l[2]==='memo') return '<div class="ln tapln" id="memoLine" role="button"><b>'+esc(l[0])+':</b> '+show(l[1])+' <span class="cue">✎ (tap to change)</span></div>';
+    return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+(extra||'')+'</div>'; }
 var viewId=null;
 function editSaved(id){
   var e=entries.find(function(x){return x.id===id;}); if(!e) return;
@@ -291,7 +296,7 @@ function renderView(justSaved){
       '<div class="btns"><button class="b-ed" id="edit">Edit</button><button class="b-del" id="del">Delete</button><button class="b-bk" id="back">Back</button></div>')+'</div>';
   $('edit').onclick=function(){ memFlash=''; editSaved(e.id); };
   if(justSaved){ $('done').onclick=function(){ memFlash=''; screen='home'; render(); };
-    if($('memo')) $('memo').onclick=function(){ gateTap('memo', $('gm-memo'), this, function(){ if(!e.amount){ memorize(e,false); } else { screen='memask'; render(); } }); }; }
+    if($('memo')) $('memo').onclick=function(){ gateTap('memo', $('gm-memo'), this, function(){ var miss=memMissing(e); if(miss){ $('gm-memo').textContent=miss; } else memorize(e); }); }; }
   else {
     $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); screen='list'; render(); } };
     $('back').onclick=function(){ screen='list'; render(); };
@@ -302,7 +307,7 @@ function renderFixPick(){
   app.className='';
   var fs=FIELDS[draft.type];
   var lines=cardLines(flat(draft)).slice(1);
-  app.innerHTML = hdr('Edit')+'<h1>Edit which?</h1>'+fs.map(function(f,i){ if(draft.memId && (f[0]==='date'||f[0]==='check')) return ''; var v=lines[i][1]; if(draft.memId && f[0]==='amount' && !draft.v.amount) v='Ask each time'; return '<button class="opt" data-i="'+i+'"><b>'+esc(f[1])+':</b> '+(v&&v!=='(blank)'?esc(v):'<span class="muted">(blank)</span>')+'</button>'; }).join('')+
+  app.innerHTML = hdr('Edit')+'<h1>Edit which?</h1>'+fs.map(function(f,i){ if(draft.memId && (f[0]==='date'||f[0]==='check'||f[0]==='amount')) return ''; var v=lines[i][1]; return '<button class="opt" data-i="'+i+'"><b>'+esc(f[1])+':</b> '+(v&&v!=='(blank)'?esc(v):'<span class="muted">(blank)</span>')+'</button>'; }).join('')+
     '<button class="opt" data-i="type"><b>Type:</b> '+TYPE_LABEL[draft.type]+'</button><div class="nav"><button class="next" id="back">Back to card</button></div>';
   app.querySelectorAll('[data-i]').forEach(function(b){ b.onclick=function(){
     if(b.dataset.i==='type'){ var t=prompt('Type: expense, deposit or transfer?', draft.type); t=(t||'').trim().toLowerCase(); if(FIELDS[t]){ draft.type=t; save('draft',draft);} screen='summary'; return render(); }
@@ -371,43 +376,35 @@ function memName(m){
 }
 function memDesc(m){
   var a=[TYPE_LABEL[m.type]];
-  a.push(m.amount ? fmtAmt(m.currency,m.amount) : 'amount: ask');
-  if(m.type==='transfer'){ if(m.entity) a.push(m.entity); } else { if(m.account) a.push(m.account); }
+  if(m.type==='transfer'){ if(m.entity) a.push(m.entity); } else { if(m.category) a.push(m.category); if(m.account) a.push(m.account); }
   return a.join(' · ');
 }
 function memCardHTML(m, extra){
   var L=[['Name',m.name],['Type',TYPE_LABEL[m.type]]];
-  FIELDS[m.type].forEach(function(f){ var k=f[0]; if(k==='date'||k==='check') return;
-    var v=m[k]||''; if(k==='amount') v = v ? fmtAmt(m.currency,v) : 'Ask each time'; L.push([f[1],v]); });
+  FIELDS[m.type].forEach(function(f){ var k=f[0]; if(k==='date'||k==='check'||k==='amount') return; L.push([f[1],m[k]||'']); });
   return '<div class="card">'+L.map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+show(l[1])+'</div>'; }).join('')+(extra||'')+'</div>';
 }
-function memFromEntry(e, withAmt){
-  var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), type:e.type, currency:e.currency||'ARS', amount: withAmt ? (e.amount||'') : ''};
+function memMissing(e){
+  if(e.type==='transfer') return (e.account&&e.to_account&&e.memo) ? '' : 'From account, to account and memo are needed to memorize.';
+  return (e.payee&&e.category&&e.memo) ? '' : (e.type==='deposit'?'From':'Payee')+', category and memo are needed to memorize.';
+}
+function memFromEntry(e){
+  var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), type:e.type, currency:e.currency||'ARS'};
   MEM_KEYS.forEach(function(k){ m[k] = FIELDS[e.type].some(function(f){return f[0]===k;}) ? (e[k]||'') : ''; });
   m.name = memName(m); return m;
 }
 function sameMem(a,b){ return a.type===b.type && ['entity','payee','account','to_account','category'].every(function(k){ return (a[k]||'').toLowerCase()===(b[k]||'').toLowerCase(); }); }
-function memorize(e, withAmt){
-  var m=memFromEntry(e, withAmt), old=mem.find(function(x){ return sameMem(x,m); });
-  if(old){ old.amount=m.amount; old.currency=m.currency; old.memo=m.memo; m=old; } else mem.push(m);
+function memorize(e){
+  var m=memFromEntry(e), old=mem.find(function(x){ return sameMem(x,m); });
+  if(old){ old.currency=m.currency; old.memo=m.memo; m=old; } else mem.push(m);
   saveMem(); memFlash='⭐ Memorized as "'+m.name+'". It is now under Memorized on the first screen.'; screen='saved'; render();
-}
-function renderMemAsk(){
-  var e=entries.find(function(x){return x.id===viewId;}); if(!e){ screen='home'; return render(); }
-  app.innerHTML = hdr('Memorize')+'<h1 class="sm">Remember the amount too?</h1>'+
-    '<p class="hint" style="margin:0 0 10px;font-size:18px;color:#111">'+esc(fmtAmt(e.currency,e.amount))+'</p>'+
-    '<div class="nav tight"><div class="btns"><button class="b-go" id="yes" style="font-size:24px;padding:18px 6px">Yes</button><button class="b-ed" id="no" style="font-size:24px;padding:18px 6px">No</button></div>'+
-    '<p class="hint">Yes: the amount fills in each time. No: you type the amount each time.</p></div>';
-  $('yes').onclick=function(){ memorize(e,true); };
-  $('no').onclick=function(){ memorize(e,false); };
 }
 function recall(id){
   var m=mem.find(function(x){return x.id===id;}); if(!m) return;
-  var v={currency:m.currency||'ARS', date:today(), check:'', amount:m.amount||''};
+  var v={currency:m.currency||'ARS', date:today(), check:'', amount:''};
   MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
   draft={type:m.type, step:0, v:v, fromMem:id};
-  if(!v.amount){ draft.step=FIELDS[m.type].findIndex(function(f){return f[0]==='amount';}); editing=true; screen='field'; }
-  else { editing=false; screen='summary'; }
+  draft.step=FIELDS[m.type].findIndex(function(f){return f[0]==='amount';}); editing=true; screen='field'; // always ask the amount first
   save('draft',draft); render(); window.scrollTo(0,0);
 }
 function renderMemList(){
@@ -434,15 +431,16 @@ function renderMemManage(){
   app.querySelectorAll('[data-rn]').forEach(function(b){ b.onclick=function(){ gateTap('rn:'+b.dataset.rn, $('gm-'+b.dataset.rn), b, function(){ var m=mem.find(function(x){return x.id===b.dataset.rn;}); var n=prompt('Name:', m.name); n=(n||'').trim(); if(n){ m.name=n.slice(0,60); saveMem(); renderMemManage(); }  else { renderMemManage(); } }); }; });
   app.querySelectorAll('[data-dl]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.dl;}); if(confirm('Delete "'+m.name+'"?')){ mem=mem.filter(function(x){return x!==m;}); saveMem(); renderMemManage(); } }; });
   app.querySelectorAll('[data-ed]').forEach(function(b){ b.onclick=function(){ gateTap('ed:'+b.dataset.ed, $('gm-'+b.dataset.ed), b, function(){ var m=mem.find(function(x){return x.id===b.dataset.ed;});
-    var v={currency:m.currency||'ARS', amount:m.amount||''}; MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
+    var v={currency:m.currency||'ARS'}; MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
     draft={type:m.type, step:0, v:v, memId:m.id}; editing=false; save('draft',draft); screen='fixpick'; render(); window.scrollTo(0,0);  }); }; });
 }
 function renderMemSummary(){
   var m=mem.find(function(x){return x.id===draft.memId;}); if(!m){ draft=null; save('draft',null); screen='memmanage'; return render(); }
-  var t={name:m.name, type:draft.type, currency:draft.v.currency||'ARS', amount:draft.v.amount||''}; MEM_KEYS.forEach(function(k){ t[k]=draft.v[k]||''; });
+  var t={name:m.name, type:draft.type, currency:draft.v.currency||'ARS'}; MEM_KEYS.forEach(function(k){ t[k]=draft.v[k]||''; });
   app.innerHTML = hdr('Editing memorized')+'<h1 class="sm">Memorized item</h1>'+memCardHTML(t)+
-    '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
-  $('save').onclick=function(){ m.type=t.type; m.currency=t.currency; m.amount=t.amount;
+    '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="gatemsg" id="gm-msave"></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
+  $('save').onclick=function(){ var miss=memMissing(t); if(miss){ $('gm-msave').textContent=miss; $('gm-msave').style.display='block'; return; }
+    m.type=t.type; m.currency=t.currency; delete m.amount;
     MEM_KEYS.forEach(function(k){ m[k] = FIELDS[t.type].some(function(f){return f[0]===k;}) ? t[k] : ''; }); saveMem();
     MEM_KEYS.forEach(function(k){ if(m[k] && k!=='memo') remember(k,m[k]); });
     draft=null; save('draft',null); screen='memmanage'; render(); };
@@ -462,7 +460,7 @@ function decodeMemPayload(txt){
   var out=[];
   arr.forEach(function(x){
     if(!x||typeof x!=='object') return; var type=String(x.type||'expense').toLowerCase(); if(!FIELDS[type]) return;
-    var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), type:type, currency: String(x.currency||'ARS').toUpperCase()==='USD'?'USD':'ARS', amount: x.amount==null||x.amount===''?'':parseAmt(String(x.amount))};
+    var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), type:type, currency: String(x.currency||'ARS').toUpperCase()==='USD'?'USD':'ARS'}; // amount is never imported
     MEM_KEYS.forEach(function(k){ m[k] = FIELDS[type].some(function(f){return f[0]===k;}) ? String(x[k]==null?'':x[k]).trim().slice(0,80) : ''; });
     m.name = String(x.name||'').trim().slice(0,60) || memName(m);
     out.push(m);
