@@ -47,6 +47,7 @@ input:focus{outline:none;border-color:#1f5f3f}
 .warn{background:#fff1d6;border:3px solid #c98a12;border-radius:14px;padding:14px;margin:12px 0;font-size:21px}
 .item{border:2px solid #ccc;border-radius:14px;padding:10px 12px;margin:0 0 10px;font-size:19px;line-height:1.4}
 .item .h{font-weight:700;font-size:21px}
+.item{cursor:pointer}
 .item .x{float:right;background:#b3261e;color:#fff;padding:8px 12px;font-size:17px}
 .muted{color:#777;font-size:17px}
 .del{background:#b3261e}
@@ -123,6 +124,8 @@ function render(){
   if(screen==='dup') return renderDup();
   if(screen==='list') return renderList();
   if(screen==='fixpick') return renderFixPick();
+  if(screen==='saved') return renderView(true);
+  if(screen==='view') return renderView(false);
 }
 function renderHome(){
   var n = entries.filter(function(e){return !e.exported_at;}).length;
@@ -213,18 +216,42 @@ function cardLines(e){
 }
 function renderSummary(){
   var e = flat(draft);
-  var h = hdr('Check and save')+'<h1>Summary</h1><div class="card">'+
+  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1>'+(draft.editId?'Edit entry':'Summary')+'</h1><div class="card">'+
     cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+'</div>'+
-    '<div class="nav"><button class="next" id="save">Save</button><div style="height:10px"></div><button class="dk" id="fix">Fix something</button><div style="height:10px"></div><button class="back" id="cancel">Cancel</button></div>';
+    '<div class="nav"><button class="next" id="save">Save</button><div style="height:10px"></div><button class="dk" id="fix">Edit</button><div style="height:10px"></div><button class="back" id="cancel">Cancel</button></div>';
   app.innerHTML=h;
   $('save').onclick=function(){ var d=findDup(e); if(d){ screen='dup'; dupOf=d; render(); } else commit(e); };
   $('fix').onclick=function(){ screen='fixpick'; renderFixPick(); };
-  $('cancel').onclick=function(){ if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
+  $('cancel').onclick=function(){
+    if(draft.editId){ if(confirm('Discard changes?')){ viewId=draft.editId; draft=null; save('draft',null); screen='view'; render(); } return; }
+    if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
+}
+function cardHTML(e){ return '<div class="card">'+cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+'</div>'; }
+var viewId=null;
+function editSaved(id){
+  var e=entries.find(function(x){return x.id===id;}); if(!e) return;
+  var v={currency:e.currency||'ARS'}; FIELDS[e.type].forEach(function(f){ v[f[0]]=e[f[0]]||''; });
+  draft={type:e.type, step:0, v:v, editId:id}; editing=false; save('draft',draft); screen='fixpick'; render(); window.scrollTo(0,0);
+}
+function renderView(justSaved){
+  var e=entries.find(function(x){return x.id===viewId;});
+  if(!e){ screen=justSaved?'home':'list'; return render(); }
+  app.innerHTML = hdr(justSaved?'Saved':(e.exported_at?'Exported':'Not exported'))+'<h1>'+(justSaved?'Saved ✓':'Entry')+'</h1>'+cardHTML(e)+
+    '<div class="nav"><button class="dk" id="edit">Edit</button><div style="height:10px"></div>'+
+    (justSaved?'<button class="next" id="done">Done</button>':'<button class="next del" id="del">Delete</button><div style="height:10px"></div><button class="back" id="back">Back to list</button>')+'</div>';
+  $('edit').onclick=function(){ editSaved(e.id); };
+  if(justSaved) $('done').onclick=function(){ screen='home'; render(); };
+  else {
+    $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); renderList(); } };
+    $('back').onclick=function(){ renderList(); };
+  }
+  window.scrollTo(0,0);
 }
 function renderFixPick(){
   var fs=FIELDS[draft.type];
-  app.innerHTML = hdr('Fix')+'<h1>Fix which?</h1>'+fs.map(function(f,i){ return '<button class="opt" data-i="'+i+'">'+esc(f[1])+'</button>'; }).join('')+
-    '<button class="opt" data-i="type">Type ('+TYPE_LABEL[draft.type]+')</button><div class="nav"><button class="back" id="back">Back</button></div>';
+  var lines=cardLines(flat(draft)).slice(1);
+  app.innerHTML = hdr('Edit')+'<h1>Edit which?</h1>'+fs.map(function(f,i){ var v=lines[i][1]; return '<button class="opt" data-i="'+i+'"><b>'+esc(f[1])+':</b> '+(v&&v!=='(blank)'?esc(v):'<span class="muted">(blank)</span>')+'</button>'; }).join('')+
+    '<button class="opt" data-i="type"><b>Type:</b> '+TYPE_LABEL[draft.type]+'</button><div class="nav"><button class="next" id="back">Back to card</button></div>';
   app.querySelectorAll('[data-i]').forEach(function(b){ b.onclick=function(){
     if(b.dataset.i==='type'){ var t=prompt('Type: expense, deposit or transfer?', draft.type); t=(t||'').trim().toLowerCase(); if(FIELDS[t]){ draft.type=t; save('draft',draft);} screen='summary'; return render(); }
     draft.step=+b.dataset.i; editing=true; screen='field'; save('draft',draft); render(); }; });
@@ -239,6 +266,7 @@ var dupOf=null;
 function findDup(e){
   if(e.amount==='') return null;
   return entries.find(function(x){
+    if(draft && draft.editId && x.id===draft.editId) return false;
     if(x.type!==e.type || x.entity!==e.entity || +x.amount!==+e.amount || x.currency!==e.currency) return false;
     if(!x.date||!e.date|| Math.abs(dayNum(x.date)-dayNum(e.date))>3) return false;
     if(e.type==='transfer') return x.account===e.account && x.to_account===e.to_account;
@@ -254,15 +282,22 @@ function renderDup(){
   $('no').onclick=function(){ screen='summary'; render(); };
 }
 function commit(e){
-  e.id = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  e.created_at = new Date().toISOString();
-  e.exported_at = '';
-  entries.push(e); save('entries', entries);
+  var old = draft && draft.editId ? entries.find(function(x){return x.id===draft.editId;}) : null;
+  if(old){
+    e.id=old.id; e.created_at=old.created_at; e.exported_at=''; e.edited_at=new Date().toISOString();
+    entries[entries.indexOf(old)]=e;
+  } else {
+    e.id = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    e.created_at = new Date().toISOString();
+    e.exported_at = '';
+    entries.push(e);
+  }
+  save('entries', entries);
   FIELDS[e.type].forEach(function(f){ if(e[f[0]]) last[f[0]]=e[f[0]]; }); last.currency=e.currency;
   save('last', last);
   remember('entity',e.entity); remember('account',e.account); if(e.to_account) remember('to_account',e.to_account);
   if(e.payee) remember('payee',e.payee); if(e.category) remember('category',e.category);
-  draft=null; save('draft',null); flash='Saved. '+TYPE_LABEL[e.type]+' '+fmtAmt(e.currency,e.amount); screen='home'; render();
+  draft=null; save('draft',null); viewId=e.id; screen='saved'; render();
 }
 
 // ---------- list & export ----------
@@ -304,7 +339,7 @@ function renderList(pending){
        '<div class="row"><button class="back" id="dl">Download CSV (new)</button><button class="back" id="dlall">All</button></div><div style="height:16px"></div>';
   if(!entries.length) h += '<p class="muted">No entries yet.</p>';
   entries.slice().reverse().forEach(function(e){
-    h += '<div class="item"><button class="x" data-del="'+e.id+'">Delete</button><div class="h">'+esc(TYPE_LABEL[e.type])+' · '+esc(fmtAmt(e.currency,e.amount))+'</div>'+
+    h += '<div class="item" data-view="'+e.id+'"><button class="x" data-del="'+e.id+'">Delete</button><div class="h">'+esc(TYPE_LABEL[e.type])+' · '+esc(fmtAmt(e.currency,e.amount))+'</div>'+
       esc(fmtDate(e.date))+' · '+esc(e.entity||'')+'<br>'+esc(e.type==='transfer'?(e.account+' → '+e.to_account):((e.payee||'')+' · '+(e.account||'')))+
       (e.category?' · '+esc(e.category):'')+(e.memo?'<br>'+esc(e.memo):'')+
       '<br><span class="muted">'+(e.exported_at?'Exported':'Not exported')+'</span></div>';
@@ -316,11 +351,16 @@ function renderList(pending){
   $('dlall').onclick=function(){ doExport(true,'dl'); };
   if($('mark')) $('mark').onclick=markExported;
   $('home').onclick=function(){ screen='home'; render(); };
-  app.querySelectorAll('[data-del]').forEach(function(b){ b.onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(e){return e.id!==b.dataset.del;}); save('entries',entries); renderList(); } }; });
+  app.querySelectorAll('[data-view]').forEach(function(d){ d.onclick=function(){ viewId=d.dataset.view; screen='view'; render(); }; });
+  app.querySelectorAll('[data-del]').forEach(function(b){ b.onclick=function(ev){ ev.stopPropagation(); if(confirm('Delete this entry?')){ entries=entries.filter(function(e){return e.id!==b.dataset.del;}); save('entries',entries); renderList(); } }; });
 }
 
 render();
-if('serviceWorker' in navigator){ window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
+if('serviceWorker' in navigator){
+  var hadCtl = !!navigator.serviceWorker.controller, reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){ if(hadCtl && !reloaded && (screen==='home'||screen==='list')){ reloaded=true; location.reload(); } });
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){ r.update().catch(function(){}); }).catch(function(){}); });
+}
 window.__entry = {get entries(){return entries;}, toCSV:toCSV};
 })();
 </script>
