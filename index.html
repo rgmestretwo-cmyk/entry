@@ -16,7 +16,7 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:#fff;color:#111;font-family:-apple-system,system-ui,"Segoe UI",Roboto,Arial,sans-serif}
 body{font-size:22px;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
-#app{max-width:560px;margin:0 auto;padding:16px 18px 40px;min-height:100vh;display:flex;flex-direction:column}
+#app{max-width:560px;margin:0 auto;padding:16px 18px 24px;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 header .t{font-weight:700;font-size:22px;color:#1f5f3f}
 header .s{font-size:17px;color:#666}
@@ -40,15 +40,19 @@ input:focus{outline:none;border-color:#1f5f3f}
 .dk{padding:18px;font-size:22px;background:#f3e6c8;color:#111;width:100%}
 .back{padding:14px;font-size:20px;background:#eee;color:#111;width:100%}
 .link{background:none;color:#2c4f86;font-size:19px;padding:8px 0;text-decoration:underline}
-.card{border:3px solid #1f5f3f;border-radius:16px;padding:14px 16px;font-size:23px;line-height:1.55;background:#f8fbf8}
-.card div b{display:inline-block;min-width:7.2em;color:#333}
-.card .ln{padding:2px 0;border-bottom:1px dashed #ccd}
-.card .ln:last-child{border-bottom:0}
+.card{border:2px solid #1f5f3f;border-radius:12px;padding:8px 12px;font-size:16px;line-height:1.35;background:#f8fbf8}
+.card .ln{padding:1px 0;overflow-wrap:anywhere}
+.card .ln b{font-weight:600;color:#333}
+h1.sm{font-size:24px;margin:2px 0 10px}
+.hint{font-size:15px;color:#666;margin:8px 0 0}
+.nav.tight{margin-top:0;padding-top:12px}
+.btns{display:flex;gap:8px;margin-top:8px}
+.btns button{flex:1;padding:14px 6px;font-size:19px;font-weight:600}
+.b-go{background:#1f5f3f;color:#fff}.b-ed{background:#f3e6c8;color:#111}.b-del{background:#b3261e;color:#fff}.b-bk{background:#eee;color:#111}
 .warn{background:#fff1d6;border:3px solid #c98a12;border-radius:14px;padding:14px;margin:12px 0;font-size:21px}
-.item{border:2px solid #ccc;border-radius:14px;padding:10px 12px;margin:0 0 10px;font-size:19px;line-height:1.4}
-.item .h{font-weight:700;font-size:21px}
-.item{cursor:pointer}
-.item .x{float:right;background:#b3261e;color:#fff;padding:8px 12px;font-size:17px}
+.item{margin:0 0 8px;cursor:pointer}
+.item .card{border-color:#9bb5a3}
+.item .st{font-size:13px;color:#777;margin-top:2px}
 .muted{color:#777;font-size:17px}
 .ver{text-align:center;color:#aaa;font-size:13px;margin-top:10px}
 .del{background:#b3261e}
@@ -69,7 +73,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v4';
+var APP_VERSION = 'v5';
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
@@ -119,7 +123,8 @@ function $(id){ return document.getElementById(id); }
 // ---------- render ----------
 var app = document.getElementById('app');
 function hdr(right){ return '<header><span class="t">Entry</span><span class="s">'+(right||'')+'</span></header>'; }
-function render(){
+function render(){ renderInner(); navSync(); }
+function renderInner(){
   if(screen==='home') return renderHome();
   if(screen==='field') return renderField();
   if(screen==='summary') return renderSummary();
@@ -218,8 +223,8 @@ function cardLines(e){
 }
 function renderSummary(){
   var e = flat(draft);
-  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1>'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
-    '<div class="nav"><button class="next" id="save">Save</button><div style="height:10px"></div><button class="dk" id="fix">Edit</button><div style="height:10px"></div><button class="back" id="cancel">Cancel</button></div>';
+  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1 class="sm">'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
+    '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
   app.innerHTML=h;
   $('save').onclick=function(){ var d=findDup(e); if(d){ screen='dup'; dupOf=d; render(); } else commit(e); };
   $('fix').onclick=function(){ screen='fixpick'; renderFixPick(); };
@@ -227,7 +232,7 @@ function renderSummary(){
     if(draft.editId){ if(confirm('Discard changes?')){ viewId=draft.editId; draft=null; save('draft',null); screen='view'; render(); } return; }
     if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
 }
-function cardHTML(e){ return '<div class="card">'+cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+'</div>'; }
+function cardHTML(e, extra){ return '<div class="card">'+cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+(extra||'')+'</div>'; }
 var viewId=null;
 function editSaved(id){
   var e=entries.find(function(x){return x.id===id;}); if(!e) return;
@@ -237,14 +242,15 @@ function editSaved(id){
 function renderView(justSaved){
   var e=entries.find(function(x){return x.id===viewId;});
   if(!e){ screen=justSaved?'home':'list'; return render(); }
-  app.innerHTML = hdr(justSaved?'Saved':(e.exported_at?'Exported':'Not exported'))+'<h1>'+(justSaved?'Saved ✓':'Entry')+'</h1>'+cardHTML(e)+
-    '<div class="nav"><button class="dk" id="edit">Edit</button><div style="height:10px"></div>'+
-    (justSaved?'<button class="next" id="done">Done</button>':'<button class="next del" id="del">Delete</button><div style="height:10px"></div><button class="back" id="back">Back to list</button>')+'</div>';
+  app.innerHTML = hdr(justSaved?'Saved':(e.exported_at?'Exported':'Not exported'))+'<h1 class="sm">'+(justSaved?'Saved ✓':'Saved entry')+'</h1>'+cardHTML(e)+
+    '<div class="nav tight">'+(justSaved?
+      '<div class="btns"><button class="b-go" id="done">Continue</button><button class="b-ed" id="edit">Edit</button></div><p class="hint">Continue for a new entry. Edit to change this one. To delete it later, use Saved entries.</p>':
+      '<div class="btns"><button class="b-ed" id="edit">Edit</button><button class="b-del" id="del">Delete</button><button class="b-bk" id="back">Back</button></div>')+'</div>';
   $('edit').onclick=function(){ editSaved(e.id); };
   if(justSaved) $('done').onclick=function(){ screen='home'; render(); };
   else {
-    $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); renderList(); } };
-    $('back').onclick=function(){ renderList(); };
+    $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); screen='list'; render(); } };
+    $('back').onclick=function(){ screen='list'; render(); };
   }
   window.scrollTo(0,0);
 }
@@ -257,6 +263,7 @@ function renderFixPick(){
     if(b.dataset.i==='type'){ var t=prompt('Type: expense, deposit or transfer?', draft.type); t=(t||'').trim().toLowerCase(); if(FIELDS[t]){ draft.type=t; save('draft',draft);} screen='summary'; return render(); }
     draft.step=+b.dataset.i; editing=true; screen='field'; save('draft',draft); render(); }; });
   $('back').onclick=function(){ screen='summary'; render(); };
+  navSync();
 }
 function flat(d){
   var e={type:d.type, entity:'',date:'',check:'',payee:'',account:'',to_account:'',category:'',currency:d.v.currency||'ARS',amount:'',memo:''};
@@ -276,8 +283,8 @@ function findDup(e){
 }
 function renderDup(){
   var x=dupOf;
-  app.innerHTML = hdr('Possible duplicate')+'<h1>Already saved?</h1><div class="warn">Looks like this one:</div>'+cardHTML(x)+
-    '<div class="nav"><button class="next" id="yes">Save anyway</button><div style="height:10px"></div><button class="back" id="no">Back to summary</button></div>';
+  app.innerHTML = hdr('Possible duplicate')+'<h1 class="sm">Already saved?</h1><p class="hint" style="margin:0 0 6px">Looks like this saved one:</p>'+cardHTML(x)+
+    '<div class="nav tight"><div class="btns"><button class="b-go" id="yes">Save anyway</button><button class="b-bk" id="no">Back</button></div></div>';
   $('yes').onclick=function(){ commit(flat(draft)); };
   $('no').onclick=function(){ screen='summary'; render(); };
 }
@@ -338,11 +345,9 @@ function renderList(pending){
   h += '<button class="next" id="share">Share CSV (new)</button><div style="height:10px"></div>'+
        '<div class="row"><button class="back" id="dl">Download CSV (new)</button><button class="back" id="dlall">All</button></div><div style="height:16px"></div>';
   if(!entries.length) h += '<p class="muted">No entries yet.</p>';
+  else h += '<p class="hint" style="margin:0 0 8px">Tap an entry to edit or delete it.</p>';
   entries.slice().reverse().forEach(function(e){
-    h += '<div class="item" data-view="'+e.id+'"><button class="x" data-del="'+e.id+'">Delete</button><div class="h">'+esc(TYPE_LABEL[e.type])+' · '+esc(fmtAmt(e.currency,e.amount))+'</div>'+
-      esc(fmtDate(e.date))+' · '+esc(e.entity||'')+'<br>'+esc(e.type==='transfer'?(e.account+' → '+e.to_account):((e.payee||'')+' · '+(e.account||'')))+
-      (e.category?' · '+esc(e.category):'')+(e.memo?'<br>'+esc(e.memo):'')+
-      '<br><span class="muted">'+(e.exported_at?'Exported':'Not exported')+'</span></div>';
+    h += '<div class="item" data-view="'+e.id+'">'+cardHTML(e, '<div class="st">'+(e.exported_at?'Exported':'Not exported')+'</div>')+'</div>';
   });
   h += '<div class="nav"><button class="back" id="home">Back</button></div>';
   app.innerHTML=h;
@@ -352,9 +357,47 @@ function renderList(pending){
   if($('mark')) $('mark').onclick=markExported;
   $('home').onclick=function(){ screen='home'; render(); };
   app.querySelectorAll('[data-view]').forEach(function(d){ d.onclick=function(){ viewId=d.dataset.view; screen='view'; render(); }; });
-  app.querySelectorAll('[data-del]').forEach(function(b){ b.onclick=function(ev){ ev.stopPropagation(); if(confirm('Delete this entry?')){ entries=entries.filter(function(e){return e.id!==b.dataset.del;}); save('entries',entries); renderList(); } }; });
+  navSync();
 }
 
+// ---------- phone Back button: in-app history ----------
+var stk=[], restoring=false, ignorePop=0, pendingPush=null;
+function curKey(){ return screen+'|'+(screen==='field'&&draft?(editing?'e':'')+draft.step:'')+(screen==='view'?viewId:''); }
+function snap(){ return {k:curKey(), s:screen, step:draft?draft.step:0, ed:editing, v:viewId}; }
+function doPush(st){ st.i=stk.length; stk.push(st); history.pushState(st,''); }
+function rewind(i, thenPush){
+  var n=stk.length-1-i; stk.length=i+1;
+  if(n>0){ ignorePop++; pendingPush=thenPush||null; history.go(-n); }
+  else if(thenPush) doPush(thenPush);
+}
+function navSync(){
+  if(restoring || !stk.length) return;
+  var k=curKey(), top=stk.length-1;
+  if(stk[top].k===k){ var s0=snap(); s0.i=top; stk[top]=s0; history.replaceState(s0,''); return; }
+  if(screen==='home') return rewind(0);
+  if(screen==='saved') return rewind(0, snap());
+  for(var i=top-1;i>=0;i--){ if(stk[i].k===k) return rewind(i); }
+  doPush(snap());
+}
+window.addEventListener('popstate', function(ev){
+  if(ignorePop>0){ ignorePop--; if(pendingPush){ var p=pendingPush; pendingPush=null; doPush(p); } return; }
+  var st=ev.state;
+  if(!st || typeof st.i!=='number' || st.i>=stk.length+1){ st={k:'home|',s:'home',i:0}; }
+  stk.length=Math.min(stk.length, st.i); stk.push(st);
+  screen=st.s; editing=!!st.ed; if(st.v) viewId=st.v;
+  var needsDraft = screen==='field'||screen==='summary'||screen==='fixpick'||screen==='dup';
+  if(needsDraft && !draft) screen='home';
+  if(!needsDraft && draft){ draft=null; save('draft',null); editing=false; }
+  if(draft && screen==='field' && typeof st.step==='number') draft.step=st.step;
+  if(draft) save('draft',draft);
+  restoring=true; try{ renderInner(); } finally { restoring=false; }
+  if(curKey()!==st.k) navSync();
+  window.scrollTo(0,0);
+});
+(function initHistory(){
+  var base={k:'home|',s:'home',step:0,ed:false,v:null,i:0};
+  stk=[base]; history.replaceState(base,'');
+})();
 render();
 if('serviceWorker' in navigator){
   var hadCtl = !!navigator.serviceWorker.controller, reloaded=false, reg=null;
