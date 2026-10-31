@@ -1,4 +1,5 @@
-const CACHE = 'entry-v11';
+const CACHE = 'entry-v12';
+const MINE = /^entry-v\d+$/;   // only this app's caches; never touch other apps on the same site (e.g. Entry Sally)
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   // Bypass the browser HTTP cache so the new files (not stale ones) get cached.
@@ -8,12 +9,11 @@ self.addEventListener('install', e => {
 });
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    const ks = await caches.keys();
-    const hadOld = ks.some(k => k !== CACHE);
-    await Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    const old = (await caches.keys()).filter(k => k !== CACHE && MINE.test(k));
+    await Promise.all(old.map(k => caches.delete(k)));
     await self.clients.claim();
-    // Pages loaded by an older version (which had no auto-reload) get reloaded into this one.
-    if (hadOld) {
+    // Pages loaded by an older version get reloaded into this one.
+    if (old.length) {
       const cs = await self.clients.matchAll({type: 'window'});
       cs.forEach(c => { try { c.navigate(c.url); } catch (err) {} });
     }

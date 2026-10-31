@@ -76,9 +76,10 @@ h1.q{font-size:28px;margin:2px 0 12px;line-height:1.15}
 .big.alt3{background:#5b3f8c}
 #app.fixedh{height:100vh;height:100dvh;min-height:0;overflow:hidden}
 .scrollarea{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
-.memit{display:block;width:100%;text-align:left;padding:10px 14px;margin:0 0 8px;background:#fff6d6;color:#111;border:2px solid #c98a12;border-radius:14px;min-height:56px}
-.memit .n{display:block;font-size:22px;font-weight:700;line-height:1.2}
-.memit .d{display:block;font-size:15px;color:#444;margin-top:2px}
+.memit{display:block;width:100%;text-align:left;padding:2px 10px;margin:0 0 3px;background:#fff6d6;color:#111;border:1px solid #c98a12;border-radius:10px;min-height:40px}
+.memit .n{display:block;font-size:17px;font-weight:700;line-height:1.12}
+.memit .d{display:block;font-size:13.5px;color:#555;line-height:1.12}
+h1.mh{font-size:22px;margin:0 0 6px}
 .b-mem{background:#5b3f8c;color:#fff}
 .mrow{margin:0 0 12px}
 .mrow .btns button{padding:10px 4px;font-size:17px;min-height:44px}
@@ -104,12 +105,14 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v11';
+var APP_VERSION = 'v12';
+// Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
+var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
-function load(k, d){ try{ var v = localStorage.getItem('entry.'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
-function save(k, v){ localStorage.setItem('entry.'+k, JSON.stringify(v)); }
+function load(k, d){ try{ var v = localStorage.getItem(APP.store+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
+function save(k, v){ localStorage.setItem(APP.store+k, JSON.stringify(v)); }
 var mem = load('mem', []);
 if(!Array.isArray(mem)) mem=[];
 (function(){ var ch=false; mem.forEach(function(m){ if('amount' in m){ delete m.amount; ch=true; } }); if(ch) save('mem', mem); })(); // memorized items never keep an amount
@@ -117,6 +120,13 @@ var pendingImport=null, memFlash='';
 var lists = load('lists_v2', null);
 if(!lists){ lists = JSON.parse(JSON.stringify(SEED)); save('lists_v2', lists); }
 ['entities','accounts','categories','payees'].forEach(function(k){ if(!lists[k]) lists[k] = SEED[k].slice(); });
+// Built-in approved memorized list: added only the very first time (if the user later deletes items, they stay deleted)
+if(APP.builtinMem && localStorage.getItem(APP.store+'mem')===null){
+  mem = APP.builtinMem.map(function(x,i){ var m={id:'b'+(i+1)}; for(var k in x) m[k]=x[k]; delete m.amount; return m; });
+  save('mem', mem);
+  mem.forEach(function(m){ ['payee','category','entity','account'].forEach(function(k){ if(m[k]){ var ln=k==='payee'?'payees':k==='category'?'categories':k==='entity'?'entities':'accounts'; if(lists[ln].indexOf(m[k])<0) lists[ln].push(m[k]); } }); });
+  save('lists_v2', lists);
+}
 var last = load('last', {});
 var entries = load('entries', []);
 var draft = load('draft', null);
@@ -157,7 +167,7 @@ function $(id){ return document.getElementById(id); }
 
 // ---------- render ----------
 var app = document.getElementById('app');
-function hdr(right){ return '<header><span class="t">Entry</span><span class="s">'+(right||'')+'</span></header>'; }
+function hdr(right){ return '<header><span class="t">'+esc(APP.name)+'</span><span class="s">'+(right||'')+'</span></header>'; }
 function render(){ renderInner(); navSync(); }
 function renderInner(){
   gateReset();
@@ -375,7 +385,7 @@ function memName(m){
   return m.payee || m.category || TYPE_LABEL[m.type];
 }
 function memDesc(m){
-  var a=[TYPE_LABEL[m.type]];
+  var a=[]; if(m.type!=='expense') a.push(TYPE_LABEL[m.type]);
   if(m.type==='transfer'){ if(m.entity) a.push(m.entity); } else { if(m.category) a.push(m.category); if(m.account) a.push(m.account); }
   return a.join(' · ');
 }
@@ -408,9 +418,9 @@ function recall(id){
   save('draft',draft); render(); window.scrollTo(0,0);
 }
 function renderMemList(){
-  var h = hdr(mem.length+' memorized')+'<h1 class="sm">⭐ Memorized</h1>';
+  var h = hdr(mem.length?'Tap one to use it':'')+'<h1 class="sm mh">⭐ Memorized'+(mem.length?' ('+mem.length+')':'')+'</h1>';
   if(!mem.length) h += '<div class="scrollarea"><p class="hint" style="font-size:18px;color:#111">Nothing memorized yet.</p><p class="hint">After you save an entry, tap “⭐ Memorize this”. It will appear here for next time.</p></div>';
-  else h += '<p class="hint" style="margin:0 0 8px">Tap one to use it today.</p><div class="scrollarea" id="memscroll">'+mem.map(function(m){ return '<button class="memit" data-m="'+esc(m.id)+'"><span class="n">'+esc(m.name)+'</span><span class="d">'+esc(memDesc(m))+'</span></button>'; }).join('')+'</div>';
+  else h += '<div class="scrollarea" id="memscroll">'+mem.map(function(m){ return '<button class="memit" data-m="'+esc(m.id)+'"><span class="n">'+esc(m.name)+'</span><span class="d">'+esc(memDesc(m))+'</span></button>'; }).join('')+'</div>';
   h += '<div class="nav tight"><div class="btns"><button class="b-bk" id="manage">Manage</button><button class="b-bk" id="back">Back</button></div><div class="ver">Version '+APP_VERSION+'</div></div>';
   app.innerHTML=h;
   app.querySelectorAll('[data-m]').forEach(function(b){ b.onclick=function(){ recall(b.dataset.m); }; });
@@ -586,6 +596,17 @@ window.addEventListener('popstate', function(ev){
   if(curKey()!==st.k) navSync();
   window.scrollTo(0,0);
 });
+// Keep this window in step with other open windows of the same app (installed app + browser tab).
+// Without this, a second window kept its old copy and could show, and even re-save, items deleted elsewhere.
+function refreshFromStorage(){
+  var m=load('mem',[]); mem=Array.isArray(m)?m:[];
+  entries=load('entries',[]); last=load('last',{});
+  var l=load('lists_v2',null); if(l) lists=l;
+  if(['home','list','view','saved','memlist','memmanage'].indexOf(screen)>=0){ restoring=true; try{ renderInner(); } finally { restoring=false; } }
+}
+window.addEventListener('storage', function(ev){ if(!ev.key || ev.key.indexOf(APP.store)===0){ if(ev.key!==APP.store+'draft') refreshFromStorage(); } });
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') refreshFromStorage(); });
+window.addEventListener('pageshow', function(ev){ if(ev.persisted) refreshFromStorage(); });
 var hashImport = checkHashImport();
 (function initHistory(){
   var base={k:'home|',s:'home',step:0,ed:false,v:null,i:0};
