@@ -83,6 +83,7 @@ h1.q{font-size:28px;margin:2px 0 12px;line-height:1.15}
 .mrow{margin:0 0 12px}
 .mrow .btns button{padding:10px 4px;font-size:17px;min-height:44px}
 textarea{font:inherit;font-size:16px;width:100%;min-height:120px;padding:10px;border:2px solid #999;border-radius:12px}
+.gatemsg{display:none;background:#fff1d6;border:2px solid #c98a12;border-radius:12px;padding:8px 10px;font-size:16px;font-weight:600;line-height:1.3;margin:8px 0 0;color:#111}
 .okmsg{background:#e3f2e6;border:2px solid #1f5f3f;border-radius:12px;padding:8px 10px;font-size:16px;font-weight:600;margin:8px 0 0}
 .ok{color:#1f5f3f;font-weight:700}
 </style>
@@ -101,7 +102,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v8';
+var APP_VERSION = 'v9';
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
@@ -156,6 +157,7 @@ var app = document.getElementById('app');
 function hdr(right){ return '<header><span class="t">Entry</span><span class="s">'+(right||'')+'</span></header>'; }
 function render(){ renderInner(); navSync(); }
 function renderInner(){
+  gateReset();
   app.className = screen==='home' ? 'home' : screen==='memlist' ? 'fixedh' : '';
   if(screen==='memlist') return renderMemList();
   if(screen==='memmanage') return renderMemManage();
@@ -284,12 +286,12 @@ function renderView(justSaved){
   app.innerHTML = hdr(justSaved?'Saved':(e.exported_at?'Exported':'Not exported'))+'<h1 class="sm">'+(justSaved?'Saved ✓':'Saved entry')+'</h1>'+cardHTML(e)+
     '<div class="nav tight">'+(justSaved?
       '<div class="btns"><button class="b-go" id="done">Continue</button><button class="b-ed" id="edit">Edit</button></div>'+
-      (memFlash?'<div class="okmsg">'+esc(memFlash)+'</div>':'<div class="btns"><button class="b-mem" id="memo">⭐ Memorize this</button></div>')+
+      (memFlash?'<div class="okmsg">'+esc(memFlash)+'</div>':'<div class="btns"><button class="b-mem" id="memo">⭐ Memorize this</button></div><div class="gatemsg" id="gm-memo" role="status" aria-live="polite"></div>')+
       '<p class="hint">Continue for a new entry. Edit to change this one. To delete it later, use Saved entries.</p>':
       '<div class="btns"><button class="b-ed" id="edit">Edit</button><button class="b-del" id="del">Delete</button><button class="b-bk" id="back">Back</button></div>')+'</div>';
   $('edit').onclick=function(){ memFlash=''; editSaved(e.id); };
   if(justSaved){ $('done').onclick=function(){ memFlash=''; screen='home'; render(); };
-    if($('memo')) $('memo').onclick=function(){ if(!e.amount){ memorize(e,false); } else { screen='memask'; render(); } }; }
+    if($('memo')) $('memo').onclick=function(){ gateTap('memo', $('gm-memo'), this, function(){ if(!e.amount){ memorize(e,false); } else { screen='memask'; render(); } }); }; }
   else {
     $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); screen='list'; render(); } };
     $('back').onclick=function(){ screen='list'; render(); };
@@ -350,6 +352,16 @@ function commit(e){
   draft=null; save('draft',null); viewId=e.id; memFlash=''; screen='saved'; render();
 }
 
+// ---------- three-tap gate for user-made memorized changes ----------
+var GATE_MSG=['It is recommended that you leave this to the accountant who will be receiving and inspecting your entries. But if you insist, tap the star again.','Are you absolutely sure?','Good luck.'];
+var gate={k:null,n:0};
+function gateReset(){ gate={k:null,n:0}; }
+function gateTap(k, msgEl, btn, action){
+  if(gate.k!==k){ app.querySelectorAll('.gatemsg').forEach(function(x){ x.textContent=''; x.style.display='none'; }); gate={k:k,n:0}; }
+  gate.n++;
+  if(msgEl){ msgEl.textContent=GATE_MSG[gate.n-1]; msgEl.style.display='block'; }
+  if(gate.n>=3){ btn.disabled=true; gateReset(); var sc=screen; setTimeout(function(){ if(screen===sc && document.body.contains(btn)) action(); }, 900); }
+}
 // ---------- memorized transactions (per phone, starts empty) ----------
 var MEM_KEYS=['entity','payee','account','to_account','category','memo'];
 function saveMem(){ save('mem', mem); }
@@ -409,20 +421,21 @@ function renderMemList(){
   $('back').onclick=function(){ screen='home'; render(); };
 }
 function renderMemManage(){
+  gateReset();
   var h = hdr(mem.length+' memorized')+'<h1 class="sm">Manage memorized</h1>'+
     '<div class="btns" style="margin:0 0 12px"><button class="b-bk" id="imp">Import list</button><button class="b-bk" id="back">Back</button></div>';
   if(!mem.length) h += '<p class="hint">No memorized items. Save an entry and tap “⭐ Memorize this”, or import an approved list.</p>';
   mem.forEach(function(m){
-    h += '<div class="mrow">'+memCardHTML(m)+'<div class="btns"><button class="b-bk" data-rn="'+esc(m.id)+'">Rename</button><button class="b-ed" data-ed="'+esc(m.id)+'">Edit</button><button class="b-del" data-dl="'+esc(m.id)+'">Delete</button></div></div>';
+    h += '<div class="mrow">'+memCardHTML(m)+'<div class="btns"><button class="b-bk" data-rn="'+esc(m.id)+'">⭐ Rename</button><button class="b-ed" data-ed="'+esc(m.id)+'">⭐ Edit</button><button class="b-del" data-dl="'+esc(m.id)+'">Delete</button></div><div class="gatemsg" id="gm-'+esc(m.id)+'" role="status" aria-live="polite"></div></div>';
   });
   app.innerHTML=h;
   $('imp').onclick=function(){ pendingImport=null; screen='memimport'; render(); };
   $('back').onclick=function(){ screen='memlist'; render(); };
-  app.querySelectorAll('[data-rn]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.rn;}); var n=prompt('Name:', m.name); n=(n||'').trim(); if(n){ m.name=n.slice(0,60); saveMem(); renderMemManage(); } }; });
+  app.querySelectorAll('[data-rn]').forEach(function(b){ b.onclick=function(){ gateTap('rn:'+b.dataset.rn, $('gm-'+b.dataset.rn), b, function(){ var m=mem.find(function(x){return x.id===b.dataset.rn;}); var n=prompt('Name:', m.name); n=(n||'').trim(); if(n){ m.name=n.slice(0,60); saveMem(); renderMemManage(); }  else { renderMemManage(); } }); }; });
   app.querySelectorAll('[data-dl]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.dl;}); if(confirm('Delete "'+m.name+'"?')){ mem=mem.filter(function(x){return x!==m;}); saveMem(); renderMemManage(); } }; });
-  app.querySelectorAll('[data-ed]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.ed;});
+  app.querySelectorAll('[data-ed]').forEach(function(b){ b.onclick=function(){ gateTap('ed:'+b.dataset.ed, $('gm-'+b.dataset.ed), b, function(){ var m=mem.find(function(x){return x.id===b.dataset.ed;});
     var v={currency:m.currency||'ARS', amount:m.amount||''}; MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
-    draft={type:m.type, step:0, v:v, memId:m.id}; editing=false; save('draft',draft); screen='fixpick'; render(); window.scrollTo(0,0); }; });
+    draft={type:m.type, step:0, v:v, memId:m.id}; editing=false; save('draft',draft); screen='fixpick'; render(); window.scrollTo(0,0);  }); }; });
 }
 function renderMemSummary(){
   var m=mem.find(function(x){return x.id===draft.memId;}); if(!m){ draft=null; save('draft',null); screen='memmanage'; return render(); }
