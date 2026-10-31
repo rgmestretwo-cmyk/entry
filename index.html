@@ -73,6 +73,17 @@ h1.q{font-size:28px;margin:2px 0 12px;line-height:1.15}
   .ver{margin-top:4px}
 }
 .del{background:#b3261e}
+.big.alt3{background:#5b3f8c}
+#app.fixedh{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.scrollarea{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
+.memit{display:block;width:100%;text-align:left;padding:10px 14px;margin:0 0 8px;background:#fff6d6;color:#111;border:2px solid #c98a12;border-radius:14px;min-height:56px}
+.memit .n{display:block;font-size:22px;font-weight:700;line-height:1.2}
+.memit .d{display:block;font-size:15px;color:#444;margin-top:2px}
+.b-mem{background:#5b3f8c;color:#fff}
+.mrow{margin:0 0 12px}
+.mrow .btns button{padding:10px 4px;font-size:17px;min-height:44px}
+textarea{font:inherit;font-size:16px;width:100%;min-height:120px;padding:10px;border:2px solid #999;border-radius:12px}
+.okmsg{background:#e3f2e6;border:2px solid #1f5f3f;border-radius:12px;padding:8px 10px;font-size:16px;font-weight:600;margin:8px 0 0}
 .ok{color:#1f5f3f;font-weight:700}
 </style>
 </head>
@@ -90,12 +101,15 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v7';
+var APP_VERSION = 'v8';
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
 function load(k, d){ try{ var v = localStorage.getItem('entry.'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
 function save(k, v){ localStorage.setItem('entry.'+k, JSON.stringify(v)); }
+var mem = load('mem', []);
+if(!Array.isArray(mem)) mem=[];
+var pendingImport=null, memFlash='';
 var lists = load('lists_v2', null);
 if(!lists){ lists = JSON.parse(JSON.stringify(SEED)); save('lists_v2', lists); }
 ['entities','accounts','categories','payees'].forEach(function(k){ if(!lists[k]) lists[k] = SEED[k].slice(); });
@@ -142,7 +156,11 @@ var app = document.getElementById('app');
 function hdr(right){ return '<header><span class="t">Entry</span><span class="s">'+(right||'')+'</span></header>'; }
 function render(){ renderInner(); navSync(); }
 function renderInner(){
-  app.className = screen==='home' ? 'home' : '';
+  app.className = screen==='home' ? 'home' : screen==='memlist' ? 'fixedh' : '';
+  if(screen==='memlist') return renderMemList();
+  if(screen==='memmanage') return renderMemManage();
+  if(screen==='memask') return renderMemAsk();
+  if(screen==='memimport') return renderMemImport();
   if(screen==='home') return renderHome();
   if(screen==='field') return renderField();
   if(screen==='summary') return renderSummary();
@@ -160,10 +178,12 @@ function renderHome(){
     '<button class="big" data-t="expense">Expense</button>'+
     '<button class="big alt" data-t="deposit">Deposit</button>'+
     '<button class="big alt2" data-t="transfer">Transfer</button>'+
+    '<button class="big alt3" id="toMem">⭐ Memorized'+(mem.length?' ('+mem.length+')':'')+'</button>'+
     '<div class="nav"><button class="back" id="toList">Saved entries &amp; export'+(n?' ('+n+' new)':'')+'</button><div class="ver">Version '+APP_VERSION+'</div></div>';
   flash='';
   app.querySelectorAll('[data-t]').forEach(function(b){ b.onclick=function(){ startEntry(b.dataset.t); }; });
   $('toList').onclick=function(){ screen='list'; render(); };
+  $('toMem').onclick=function(){ screen='memlist'; render(); };
 }
 function startEntry(t){
   draft = {type:t, step:0, v:{currency: last.currency||'ARS', date: today()}};
@@ -240,8 +260,9 @@ function cardLines(e){
   return L;
 }
 function renderSummary(){
+  if(draft.memId) return renderMemSummary();
   var e = flat(draft);
-  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1 class="sm">'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
+  var h = hdr(draft.editId?'Editing saved entry':draft.fromMem?'⭐ From memorized':'Check and save')+'<h1 class="sm">'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
     '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
   app.innerHTML=h;
   $('save').onclick=function(){ var d=findDup(e); if(d){ screen='dup'; dupOf=d; render(); } else commit(e); };
@@ -262,10 +283,13 @@ function renderView(justSaved){
   if(!e){ screen=justSaved?'home':'list'; return render(); }
   app.innerHTML = hdr(justSaved?'Saved':(e.exported_at?'Exported':'Not exported'))+'<h1 class="sm">'+(justSaved?'Saved ✓':'Saved entry')+'</h1>'+cardHTML(e)+
     '<div class="nav tight">'+(justSaved?
-      '<div class="btns"><button class="b-go" id="done">Continue</button><button class="b-ed" id="edit">Edit</button></div><p class="hint">Continue for a new entry. Edit to change this one. To delete it later, use Saved entries.</p>':
+      '<div class="btns"><button class="b-go" id="done">Continue</button><button class="b-ed" id="edit">Edit</button></div>'+
+      (memFlash?'<div class="okmsg">'+esc(memFlash)+'</div>':'<div class="btns"><button class="b-mem" id="memo">⭐ Memorize this</button></div>')+
+      '<p class="hint">Continue for a new entry. Edit to change this one. To delete it later, use Saved entries.</p>':
       '<div class="btns"><button class="b-ed" id="edit">Edit</button><button class="b-del" id="del">Delete</button><button class="b-bk" id="back">Back</button></div>')+'</div>';
-  $('edit').onclick=function(){ editSaved(e.id); };
-  if(justSaved) $('done').onclick=function(){ screen='home'; render(); };
+  $('edit').onclick=function(){ memFlash=''; editSaved(e.id); };
+  if(justSaved){ $('done').onclick=function(){ memFlash=''; screen='home'; render(); };
+    if($('memo')) $('memo').onclick=function(){ if(!e.amount){ memorize(e,false); } else { screen='memask'; render(); } }; }
   else {
     $('del').onclick=function(){ if(confirm('Delete this entry?')){ entries=entries.filter(function(x){return x.id!==e.id;}); save('entries',entries); screen='list'; render(); } };
     $('back').onclick=function(){ screen='list'; render(); };
@@ -276,7 +300,7 @@ function renderFixPick(){
   app.className='';
   var fs=FIELDS[draft.type];
   var lines=cardLines(flat(draft)).slice(1);
-  app.innerHTML = hdr('Edit')+'<h1>Edit which?</h1>'+fs.map(function(f,i){ var v=lines[i][1]; return '<button class="opt" data-i="'+i+'"><b>'+esc(f[1])+':</b> '+(v&&v!=='(blank)'?esc(v):'<span class="muted">(blank)</span>')+'</button>'; }).join('')+
+  app.innerHTML = hdr('Edit')+'<h1>Edit which?</h1>'+fs.map(function(f,i){ if(draft.memId && (f[0]==='date'||f[0]==='check')) return ''; var v=lines[i][1]; if(draft.memId && f[0]==='amount' && !draft.v.amount) v='Ask each time'; return '<button class="opt" data-i="'+i+'"><b>'+esc(f[1])+':</b> '+(v&&v!=='(blank)'?esc(v):'<span class="muted">(blank)</span>')+'</button>'; }).join('')+
     '<button class="opt" data-i="type"><b>Type:</b> '+TYPE_LABEL[draft.type]+'</button><div class="nav"><button class="next" id="back">Back to card</button></div>';
   app.querySelectorAll('[data-i]').forEach(function(b){ b.onclick=function(){
     if(b.dataset.i==='type'){ var t=prompt('Type: expense, deposit or transfer?', draft.type); t=(t||'').trim().toLowerCase(); if(FIELDS[t]){ draft.type=t; save('draft',draft);} screen='summary'; return render(); }
@@ -323,7 +347,144 @@ function commit(e){
   save('last', last);
   remember('entity',e.entity); remember('account',e.account); if(e.to_account) remember('to_account',e.to_account);
   if(e.payee) remember('payee',e.payee); if(e.category) remember('category',e.category);
-  draft=null; save('draft',null); viewId=e.id; screen='saved'; render();
+  draft=null; save('draft',null); viewId=e.id; memFlash=''; screen='saved'; render();
+}
+
+// ---------- memorized transactions (per phone, starts empty) ----------
+var MEM_KEYS=['entity','payee','account','to_account','category','memo'];
+function saveMem(){ save('mem', mem); }
+function memName(m){
+  if(m.type==='transfer') return [m.account,m.to_account].filter(Boolean).join(' → ') || 'Transfer';
+  return m.payee || m.category || TYPE_LABEL[m.type];
+}
+function memDesc(m){
+  var a=[TYPE_LABEL[m.type]];
+  a.push(m.amount ? fmtAmt(m.currency,m.amount) : 'amount: ask');
+  if(m.type==='transfer'){ if(m.entity) a.push(m.entity); } else { if(m.account) a.push(m.account); }
+  return a.join(' · ');
+}
+function memCardHTML(m, extra){
+  var L=[['Name',m.name],['Type',TYPE_LABEL[m.type]]];
+  FIELDS[m.type].forEach(function(f){ var k=f[0]; if(k==='date'||k==='check') return;
+    var v=m[k]||''; if(k==='amount') v = v ? fmtAmt(m.currency,v) : 'Ask each time'; L.push([f[1],v]); });
+  return '<div class="card">'+L.map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+show(l[1])+'</div>'; }).join('')+(extra||'')+'</div>';
+}
+function memFromEntry(e, withAmt){
+  var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), type:e.type, currency:e.currency||'ARS', amount: withAmt ? (e.amount||'') : ''};
+  MEM_KEYS.forEach(function(k){ m[k] = FIELDS[e.type].some(function(f){return f[0]===k;}) ? (e[k]||'') : ''; });
+  m.name = memName(m); return m;
+}
+function sameMem(a,b){ return a.type===b.type && ['entity','payee','account','to_account','category'].every(function(k){ return (a[k]||'').toLowerCase()===(b[k]||'').toLowerCase(); }); }
+function memorize(e, withAmt){
+  var m=memFromEntry(e, withAmt), old=mem.find(function(x){ return sameMem(x,m); });
+  if(old){ old.amount=m.amount; old.currency=m.currency; old.memo=m.memo; m=old; } else mem.push(m);
+  saveMem(); memFlash='⭐ Memorized as "'+m.name+'". It is now under Memorized on the first screen.'; screen='saved'; render();
+}
+function renderMemAsk(){
+  var e=entries.find(function(x){return x.id===viewId;}); if(!e){ screen='home'; return render(); }
+  app.innerHTML = hdr('Memorize')+'<h1 class="sm">Remember the amount too?</h1>'+
+    '<p class="hint" style="margin:0 0 10px;font-size:18px;color:#111">'+esc(fmtAmt(e.currency,e.amount))+'</p>'+
+    '<div class="nav tight"><div class="btns"><button class="b-go" id="yes" style="font-size:24px;padding:18px 6px">Yes</button><button class="b-ed" id="no" style="font-size:24px;padding:18px 6px">No</button></div>'+
+    '<p class="hint">Yes: the amount fills in each time. No: you type the amount each time.</p></div>';
+  $('yes').onclick=function(){ memorize(e,true); };
+  $('no').onclick=function(){ memorize(e,false); };
+}
+function recall(id){
+  var m=mem.find(function(x){return x.id===id;}); if(!m) return;
+  var v={currency:m.currency||'ARS', date:today(), check:'', amount:m.amount||''};
+  MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
+  draft={type:m.type, step:0, v:v, fromMem:id};
+  if(!v.amount){ draft.step=FIELDS[m.type].findIndex(function(f){return f[0]==='amount';}); editing=true; screen='field'; }
+  else { editing=false; screen='summary'; }
+  save('draft',draft); render(); window.scrollTo(0,0);
+}
+function renderMemList(){
+  var h = hdr(mem.length+' memorized')+'<h1 class="sm">⭐ Memorized</h1>';
+  if(!mem.length) h += '<div class="scrollarea"><p class="hint" style="font-size:18px;color:#111">Nothing memorized yet.</p><p class="hint">After you save an entry, tap “⭐ Memorize this”. It will appear here for next time.</p></div>';
+  else h += '<p class="hint" style="margin:0 0 8px">Tap one to use it today.</p><div class="scrollarea" id="memscroll">'+mem.map(function(m){ return '<button class="memit" data-m="'+esc(m.id)+'"><span class="n">'+esc(m.name)+'</span><span class="d">'+esc(memDesc(m))+'</span></button>'; }).join('')+'</div>';
+  h += '<div class="nav tight"><div class="btns"><button class="b-bk" id="manage">Manage</button><button class="b-bk" id="back">Back</button></div><div class="ver">Version '+APP_VERSION+'</div></div>';
+  app.innerHTML=h;
+  app.querySelectorAll('[data-m]').forEach(function(b){ b.onclick=function(){ recall(b.dataset.m); }; });
+  $('manage').onclick=function(){ screen='memmanage'; render(); };
+  $('back').onclick=function(){ screen='home'; render(); };
+}
+function renderMemManage(){
+  var h = hdr(mem.length+' memorized')+'<h1 class="sm">Manage memorized</h1>'+
+    '<div class="btns" style="margin:0 0 12px"><button class="b-bk" id="imp">Import list</button><button class="b-bk" id="back">Back</button></div>';
+  if(!mem.length) h += '<p class="hint">No memorized items. Save an entry and tap “⭐ Memorize this”, or import an approved list.</p>';
+  mem.forEach(function(m){
+    h += '<div class="mrow">'+memCardHTML(m)+'<div class="btns"><button class="b-bk" data-rn="'+esc(m.id)+'">Rename</button><button class="b-ed" data-ed="'+esc(m.id)+'">Edit</button><button class="b-del" data-dl="'+esc(m.id)+'">Delete</button></div></div>';
+  });
+  app.innerHTML=h;
+  $('imp').onclick=function(){ pendingImport=null; screen='memimport'; render(); };
+  $('back').onclick=function(){ screen='memlist'; render(); };
+  app.querySelectorAll('[data-rn]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.rn;}); var n=prompt('Name:', m.name); n=(n||'').trim(); if(n){ m.name=n.slice(0,60); saveMem(); renderMemManage(); } }; });
+  app.querySelectorAll('[data-dl]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.dl;}); if(confirm('Delete "'+m.name+'"?')){ mem=mem.filter(function(x){return x!==m;}); saveMem(); renderMemManage(); } }; });
+  app.querySelectorAll('[data-ed]').forEach(function(b){ b.onclick=function(){ var m=mem.find(function(x){return x.id===b.dataset.ed;});
+    var v={currency:m.currency||'ARS', amount:m.amount||''}; MEM_KEYS.forEach(function(k){ v[k]=m[k]||''; });
+    draft={type:m.type, step:0, v:v, memId:m.id}; editing=false; save('draft',draft); screen='fixpick'; render(); window.scrollTo(0,0); }; });
+}
+function renderMemSummary(){
+  var m=mem.find(function(x){return x.id===draft.memId;}); if(!m){ draft=null; save('draft',null); screen='memmanage'; return render(); }
+  var t={name:m.name, type:draft.type, currency:draft.v.currency||'ARS', amount:draft.v.amount||''}; MEM_KEYS.forEach(function(k){ t[k]=draft.v[k]||''; });
+  app.innerHTML = hdr('Editing memorized')+'<h1 class="sm">Memorized item</h1>'+memCardHTML(t)+
+    '<div class="nav tight"><div class="btns"><button class="b-go" id="save">Save</button></div><div class="btns"><button class="b-ed" id="fix">Edit</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
+  $('save').onclick=function(){ m.type=t.type; m.currency=t.currency; m.amount=t.amount;
+    MEM_KEYS.forEach(function(k){ m[k] = FIELDS[t.type].some(function(f){return f[0]===k;}) ? t[k] : ''; }); saveMem();
+    MEM_KEYS.forEach(function(k){ if(m[k] && k!=='memo') remember(k,m[k]); });
+    draft=null; save('draft',null); screen='memmanage'; render(); };
+  $('fix').onclick=function(){ screen='fixpick'; renderFixPick(); };
+  $('cancel').onclick=function(){ draft=null; save('draft',null); screen='memmanage'; render(); };
+}
+// Import an approved list: link with #mem=<base64url JSON>, or paste JSON/base64, or a .json file.
+function decodeMemPayload(txt){
+  txt=String(txt||'').trim(); var i=txt.indexOf('mem='); if(i>=0) txt=txt.slice(i+4);
+  var data;
+  try{ data=JSON.parse(txt); }catch(e){
+    var b=decodeURIComponent(txt).replace(/-/g,'+').replace(/_/g,'/').replace(/\s/g,''); while(b.length%4) b+='=';
+    var bin=atob(b), bytes=new Uint8Array(bin.length); for(var j=0;j<bin.length;j++) bytes[j]=bin.charCodeAt(j);
+    data=JSON.parse(new TextDecoder('utf-8').decode(bytes));
+  }
+  var arr=Array.isArray(data)?data:(data&&(data.items||data.memorized))||[];
+  var out=[];
+  arr.forEach(function(x){
+    if(!x||typeof x!=='object') return; var type=String(x.type||'expense').toLowerCase(); if(!FIELDS[type]) return;
+    var m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), type:type, currency: String(x.currency||'ARS').toUpperCase()==='USD'?'USD':'ARS', amount: x.amount==null||x.amount===''?'':parseAmt(String(x.amount))};
+    MEM_KEYS.forEach(function(k){ m[k] = FIELDS[type].some(function(f){return f[0]===k;}) ? String(x[k]==null?'':x[k]).trim().slice(0,80) : ''; });
+    m.name = String(x.name||'').trim().slice(0,60) || memName(m);
+    out.push(m);
+  });
+  if(!out.length) throw new Error('empty');
+  return out;
+}
+function renderMemImport(){
+  var h = hdr('Import')+'<h1 class="sm">Import memorized</h1>';
+  if(pendingImport){
+    h += '<p class="hint" style="margin:0 0 8px;font-size:18px;color:#111">Add these '+pendingImport.length+' memorized items?</p><div class="card">'+
+      pendingImport.map(function(m){ return '<div class="ln"><b>'+esc(m.name)+'</b> · '+esc(memDesc(m))+'</div>'; }).join('')+'</div>'+
+      '<div class="nav tight"><div class="btns"><button class="b-go" id="add">Add '+pendingImport.length+'</button><button class="b-bk" id="cancel">Cancel</button></div></div>';
+    app.innerHTML=h;
+    $('add').onclick=function(){
+      var added=0; pendingImport.forEach(function(m){ var old=mem.find(function(x){ return x.name.toLowerCase()===m.name.toLowerCase(); }); if(old){ var id=old.id; Object.assign(old,m); old.id=id; } else { mem.push(m); added++; }
+        MEM_KEYS.forEach(function(k){ if(m[k] && k!=='memo') remember(k,m[k]); }); });
+      saveMem(); pendingImport=null; screen='memlist'; render(); };
+    $('cancel').onclick=function(){ pendingImport=null; screen='home'; render(); };
+    return;
+  }
+  h += '<p class="hint" style="margin:0 0 8px">Paste the list you were given, or choose its file.</p><textarea id="txt" placeholder="Paste here"></textarea>'+
+    '<div class="btns"><button class="b-go" id="chk">Check</button></div><div class="btns"><label class="b-bk" style="flex:1;text-align:center;padding:14px 6px;border-radius:14px;font-size:19px;font-weight:600">Choose file<input type="file" id="file" accept=".json,application/json,text/plain" style="display:none"></label></div>'+
+    '<p class="hint" id="err"></p><div class="nav tight"><div class="btns"><button class="b-bk" id="back">Back</button></div></div>';
+  app.innerHTML=h;
+  function tryIt(txt){ try{ pendingImport=decodeMemPayload(txt); renderMemImport(); }catch(e){ $('err').textContent='Could not read that list.'; } }
+  $('chk').onclick=function(){ tryIt($('txt').value); };
+  $('file').onchange=function(){ var f=this.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ tryIt(r.result); }; r.readAsText(f); };
+  $('back').onclick=function(){ screen='memmanage'; render(); };
+}
+function checkHashImport(){
+  if(!/^#mem=/.test(location.hash)) return false;
+  var raw=location.hash.slice(5);
+  try{ history.replaceState(history.state,'',location.pathname+location.search); }catch(e){}
+  try{ pendingImport=decodeMemPayload(raw); return true; }catch(e){ flash='Could not read the memorized list link.'; return false; }
 }
 
 // ---------- list & export ----------
@@ -396,6 +557,7 @@ function navSync(){
   if(screen==='home') return rewind(0);
   if(screen==='saved') return rewind(0, snap());
   for(var i=top-1;i>=0;i--){ if(stk[i].k===k) return rewind(i); }
+  if(stk[top].s==='memimport') return rewind(top-1, snap()); // the import screen is not kept in Back history
   doPush(snap());
 }
 window.addEventListener('popstate', function(ev){
@@ -413,11 +575,14 @@ window.addEventListener('popstate', function(ev){
   if(curKey()!==st.k) navSync();
   window.scrollTo(0,0);
 });
+var hashImport = checkHashImport();
 (function initHistory(){
   var base={k:'home|',s:'home',step:0,ed:false,v:null,i:0};
   stk=[base]; history.replaceState(base,'');
 })();
+if(hashImport){ screen='memimport'; }
 render();
+window.addEventListener('hashchange', function(){ if(!/^#mem=/.test(location.hash)) return; if(checkHashImport()){ screen='memimport'; } else { draft=null; save('draft',null); screen='home'; } render(); });
 if('serviceWorker' in navigator){
   var hadCtl = !!navigator.serviceWorker.controller, reloaded=false, reg=null;
   navigator.serviceWorker.addEventListener('controllerchange', function(){ if(hadCtl && !reloaded){ reloaded=true; location.reload(); } });
