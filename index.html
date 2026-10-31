@@ -50,6 +50,7 @@ input:focus{outline:none;border-color:#1f5f3f}
 .item{cursor:pointer}
 .item .x{float:right;background:#b3261e;color:#fff;padding:8px 12px;font-size:17px}
 .muted{color:#777;font-size:17px}
+.ver{text-align:center;color:#aaa;font-size:13px;margin-top:10px}
 .del{background:#b3261e}
 .ok{color:#1f5f3f;font-weight:700}
 </style>
@@ -68,6 +69,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
+var APP_VERSION = 'v4';
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ---------- storage ----------
@@ -135,7 +137,7 @@ function renderHome(){
     '<button class="big" data-t="expense">Expense</button>'+
     '<button class="big alt" data-t="deposit">Deposit</button>'+
     '<button class="big alt2" data-t="transfer">Transfer</button>'+
-    '<div class="nav"><button class="back" id="toList">Saved entries &amp; export'+(n?' ('+n+' new)':'')+'</button></div>';
+    '<div class="nav"><button class="back" id="toList">Saved entries &amp; export'+(n?' ('+n+' new)':'')+'</button><div class="ver">'+APP_VERSION+'</div></div>';
   flash='';
   app.querySelectorAll('[data-t]').forEach(function(b){ b.onclick=function(){ startEntry(b.dataset.t); }; });
   $('toList').onclick=function(){ screen='list'; render(); };
@@ -216,8 +218,7 @@ function cardLines(e){
 }
 function renderSummary(){
   var e = flat(draft);
-  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1>'+(draft.editId?'Edit entry':'Summary')+'</h1><div class="card">'+
-    cardLines(e).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+(l[1]==='(blank)'?show(''):show(l[1]))+'</div>'; }).join('')+'</div>'+
+  var h = hdr(draft.editId?'Editing saved entry':'Check and save')+'<h1>'+(draft.editId?'Edit entry':'Summary')+'</h1>'+cardHTML(e)+
     '<div class="nav"><button class="next" id="save">Save</button><div style="height:10px"></div><button class="dk" id="fix">Edit</button><div style="height:10px"></div><button class="back" id="cancel">Cancel</button></div>';
   app.innerHTML=h;
   $('save').onclick=function(){ var d=findDup(e); if(d){ screen='dup'; dupOf=d; render(); } else commit(e); };
@@ -275,8 +276,7 @@ function findDup(e){
 }
 function renderDup(){
   var x=dupOf;
-  app.innerHTML = hdr('Possible duplicate')+'<h1>Already saved?</h1><div class="warn">Looks like this one:</div><div class="card">'+
-    cardLines(x).map(function(l){ return '<div class="ln"><b>'+esc(l[0])+':</b> '+show(l[1]==='(blank)'?'':l[1])+'</div>'; }).join('')+'</div>'+
+  app.innerHTML = hdr('Possible duplicate')+'<h1>Already saved?</h1><div class="warn">Looks like this one:</div>'+cardHTML(x)+
     '<div class="nav"><button class="next" id="yes">Save anyway</button><div style="height:10px"></div><button class="back" id="no">Back to summary</button></div>';
   $('yes').onclick=function(){ commit(flat(draft)); };
   $('no').onclick=function(){ screen='summary'; render(); };
@@ -357,9 +357,12 @@ function renderList(pending){
 
 render();
 if('serviceWorker' in navigator){
-  var hadCtl = !!navigator.serviceWorker.controller, reloaded=false;
-  navigator.serviceWorker.addEventListener('controllerchange', function(){ if(hadCtl && !reloaded && (screen==='home'||screen==='list')){ reloaded=true; location.reload(); } });
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){ r.update().catch(function(){}); }).catch(function(){}); });
+  var hadCtl = !!navigator.serviceWorker.controller, reloaded=false, reg=null;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){ if(hadCtl && !reloaded){ reloaded=true; location.reload(); } });
+  function checkUpdate(){ if(reg && navigator.onLine!==false) reg.update().catch(function(){}); }
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){ reg=r; checkUpdate(); }).catch(function(){}); });
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') checkUpdate(); });
+  window.addEventListener('online', checkUpdate);
 }
 window.__entry = {get entries(){return entries;}, toCSV:toCSV};
 })();
