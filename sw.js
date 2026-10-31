@@ -1,4 +1,4 @@
-const CACHE = 'entry-v12';
+const CACHE = 'entry-v13';
 const MINE = /^entry-v\d+$/;   // only this app's caches; never touch other apps on the same site (e.g. Entry Sally)
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
