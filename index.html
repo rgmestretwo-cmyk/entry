@@ -119,7 +119,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v14';
+var APP_VERSION = 'v15';
 // Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
 var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -314,12 +314,13 @@ function renderField(){
   $('dk').onclick=function(){ draft.v[key] = last[key]||''; if(key==='amount'&&last.currency) draft.v.currency=last.currency; advance(); };
   $('back').onclick=function(){ if(editing){ editing=false; screen='summary'; save('draft',draft); return render(); } if(draft.step>0){ draft.step--; save('draft',draft); render(); } else { draft=null; save('draft',null); screen='home'; render(); } };
   $('cancel').onclick=function(){ if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
-  if(kind!=='entity'&&kind!=='account'&&kind!=='date'){ setTimeout(function(){ try{inp.focus();}catch(e){} }, 50); }
+  if(kind==='amount'||kind==='memo'||kind==='check'){ setTimeout(function(){ try{inp.focus();}catch(e){} }, 50); }  // no keyboard on screens with a memorized list; tap the box to type
 }
 function advance(){
   if(editing){ editing=false; screen='summary'; }
   else if(draft.step < FIELDS[draft.type].length-1){ draft.step++; }
   else screen='summary';
+  try{ if(document.activeElement) document.activeElement.blur(); }catch(e){}
   save('draft', draft); render(); window.scrollTo(0,0);
 }
 function cardLines(e){
