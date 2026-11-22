@@ -119,7 +119,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v15';
+var APP_VERSION = 'v16';
 // Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
 var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -152,6 +152,7 @@ var editing = false; // came from Fix
 var flash = '';
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 
+function matchSort(arr,q){ q=(q||'').trim().toLowerCase(); if(!q) return arr.slice(); var st=[],ot=[]; arr.forEach(function(x){ var l=x.toLowerCase(), i=l.indexOf(q); if(i===0) st.push(x); else if(i>0) ot.push(x); }); return st.concat(ot); }
 function listFor(key){ return key==='entity'?'entities':(key==='account'||key==='to_account')?'accounts':key==='category'?'categories':key==='payee'?'payees':null; }
 function remember(key, val){
   var ln = listFor(key); if(!ln || !val) return;
@@ -270,7 +271,7 @@ function renderField(){
     var ln = listFor(key), opts = lists[ln].slice();
     if(key==='to_account') opts = opts.filter(function(x){ return x!==draft.v.account; });
     h += '<div id="opts">'+opts.map(function(o){ return '<button class="opt'+(o===v?' sel':'')+'" data-v="'+esc(o)+'">'+esc(o)+'</button>'; }).join('')+'</div>';
-    h += '<input id="inp" placeholder="Add new…" autocomplete="off" autocapitalize="words" value="">';
+    h += '<input id="inp" placeholder="Search or add new…" autocomplete="off" autocapitalize="words" value="">';
   } else if(kind==='date'){
     h += '<input id="inp" type="date" value="'+esc(v||today())+'">'+
       '<div class="chips"><button class="chip" data-d="0">Today</button><button class="chip" data-d="-1">Yesterday</button></div>'+
@@ -290,6 +291,12 @@ function renderField(){
   app.innerHTML = h;
   var inp = $('inp');
   app.querySelectorAll('.opt').forEach(function(b){ b.onclick=function(){ draft.v[key]=b.dataset.v; advance(); }; });
+  var optBox=$('opts');
+  if(optBox){ var allOpts=[].slice.call(optBox.querySelectorAll('.opt')); inp.addEventListener('input',function(){
+    var order=matchSort(allOpts.map(function(b){ return b.dataset.v; }), inp.value), byV={};
+    allOpts.forEach(function(b){ b.style.display='none'; byV[b.dataset.v]=b; });
+    order.forEach(function(x){ var b=byV[x]; b.style.display=''; optBox.appendChild(b); });
+    optBox.scrollTop=0; }); }
   app.querySelectorAll('[data-c]').forEach(function(b){ b.onclick=function(){ draft.v.currency=b.dataset.c; draft.v.amount=inp.value; save('draft',draft); renderField(); $('inp').focus(); }; });
   app.querySelectorAll('[data-d]').forEach(function(b){ b.onclick=function(){ var d=new Date(); d.setDate(d.getDate()+(+b.dataset.d)); inp.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); $('dshow').textContent=fmtDate(inp.value); }; });
   app.querySelectorAll('[data-s]').forEach(function(b){ b.onclick=function(){ draft.v[key]=b.dataset.s; advance(); }; });
@@ -297,7 +304,7 @@ function renderField(){
   var sg = $('sugg');
   function fillSugg(){
     if(!sg) return; var q=inp.value.trim().toLowerCase();
-    var a = lists[listFor(key)].filter(function(x){ return !q || x.toLowerCase().indexOf(q)>=0; }).slice(0, q?12:10);
+    var a = matchSort(lists[listFor(key)], q).slice(0, q?12:10);
     sg.innerHTML = a.map(function(x){ return '<button class="chip" data-g="'+esc(x)+'">'+esc(x)+'</button>'; }).join('');
     sg.querySelectorAll('[data-g]').forEach(function(b){ b.onclick=function(){ draft.v[key]=b.dataset.g; advance(); }; });
   }
