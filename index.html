@@ -119,7 +119,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v16';
+var APP_VERSION = 'v17';
 // Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
 var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -486,11 +486,18 @@ function recall(id){
 function renderMemList(){
   var h = hdr(listFlash || (mem.length?'Tap one to use it':''))+'<h1 class="sm mh">⭐ Memorized'+(mem.length?' ('+mem.length+')':'')+'</h1>';
   if(!mem.length) h += '<div class="scrollarea"><p class="hint" style="font-size:18px;color:#111">Nothing memorized yet.</p><p class="hint">After you save an entry, tap “⭐ Memorize this”. It will appear here for next time.</p></div>';
-  else h += '<div class="scrollarea" id="memscroll">'+mem.map(function(m){ return '<button class="memit" data-m="'+esc(m.id)+'"><span class="n">'+esc(m.name)+'</span><span class="d">'+esc(memDesc(m))+'</span></button>'; }).join('')+'</div>';
+  else h += '<input id="memq" placeholder="Search…" autocomplete="off" autocapitalize="off" style="font-size:20px;padding:10px 12px;margin:0 0 8px">'+'<div class="scrollarea" id="memscroll">'+mem.map(function(m){ return '<button class="memit" data-m="'+esc(m.id)+'"><span class="n">'+esc(m.name)+'</span><span class="d">'+esc(memDesc(m))+'</span></button>'; }).join('')+'</div>';
   h += '<div class="nav tight"><div class="btns"><button class="b-bk" id="manage">Manage</button><button class="b-bk" id="back">Back</button></div><div class="ver">Version '+APP_VERSION+'</div></div>';
   app.innerHTML=h;
   listFlash='';
   app.querySelectorAll('[data-m]').forEach(function(b){ b.onclick=function(){ recall(b.dataset.m); }; });
+  var mq=$('memq'), ms=$('memscroll');
+  if(mq&&ms){ var items=[].slice.call(ms.querySelectorAll('.memit')); mq.addEventListener('input',function(){
+    var txt={}, keys=items.map(function(b){ var t=b.querySelector('.n').textContent+' · '+b.querySelector('.d').textContent; txt[t]=(txt[t]||[]).concat([b]); return t; });
+    var seen={}, order=matchSort(keys.filter(function(k){ if(seen[k]) return false; seen[k]=1; return true; }), mq.value);
+    items.forEach(function(b){ b.style.display='none'; });
+    order.forEach(function(k){ txt[k].forEach(function(b){ b.style.display=''; ms.appendChild(b); }); });
+    ms.scrollTop=0; }); }
   $('manage').onclick=function(){ screen='memmanage'; render(); };
   $('back').onclick=function(){ screen='home'; render(); };
 }
