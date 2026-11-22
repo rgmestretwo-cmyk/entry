@@ -119,7 +119,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v17';
+var APP_VERSION = 'v18';
 // Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
 var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -297,7 +297,7 @@ function renderField(){
     allOpts.forEach(function(b){ b.style.display='none'; byV[b.dataset.v]=b; });
     order.forEach(function(x){ var b=byV[x]; b.style.display=''; optBox.appendChild(b); });
     optBox.scrollTop=0; }); }
-  app.querySelectorAll('[data-c]').forEach(function(b){ b.onclick=function(){ draft.v.currency=b.dataset.c; draft.v.amount=inp.value; save('draft',draft); renderField(); $('inp').focus(); }; });
+  app.querySelectorAll('[data-c]').forEach(function(b){ b.onclick=function(){ draft.v.currency=b.dataset.c; draft.v.amount=inp.value; save('draft',draft); renderField(); }; });
   app.querySelectorAll('[data-d]').forEach(function(b){ b.onclick=function(){ var d=new Date(); d.setDate(d.getDate()+(+b.dataset.d)); inp.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); $('dshow').textContent=fmtDate(inp.value); }; });
   app.querySelectorAll('[data-s]').forEach(function(b){ b.onclick=function(){ draft.v[key]=b.dataset.s; advance(); }; });
   if(kind==='date') inp.onchange=function(){ $('dshow').textContent=fmtDate(inp.value); };
@@ -321,7 +321,7 @@ function renderField(){
   $('dk').onclick=function(){ draft.v[key] = last[key]||''; if(key==='amount'&&last.currency) draft.v.currency=last.currency; advance(); };
   $('back').onclick=function(){ if(editing){ editing=false; screen='summary'; save('draft',draft); return render(); } if(draft.step>0){ draft.step--; save('draft',draft); render(); } else { draft=null; save('draft',null); screen='home'; render(); } };
   $('cancel').onclick=function(){ if(confirm('Discard this entry?')){ draft=null; save('draft',null); screen='home'; render(); } };
-  if(kind==='amount'||kind==='memo'||kind==='check'){ setTimeout(function(){ try{inp.focus();}catch(e){} }, 50); }  // no keyboard on screens with a memorized list; tap the box to type
+  // Roberto 2026-11-22: Next never opens the keyboard on any screen; it opens only when a box is tapped
 }
 function advance(){
   if(editing){ editing=false; screen='summary'; }
