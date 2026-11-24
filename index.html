@@ -31,6 +31,8 @@ html,body{margin:0;background:#fff;color:#111;font-family:-apple-system,system-u
 body{font-size:22px;padding:0}
 #app{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top, 0px) + 12px) 18px calc(env(safe-area-inset-bottom, 0px) + 12px);min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+header .left{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+header .owner{font-size:12px;font-weight:500;color:#666;letter-spacing:.03em;line-height:1.2;margin:0 0 1px}
 header .t{font-weight:700;font-size:22px;color:#1f5f3f}
 header .s{font-size:17px;color:#666}
 h1{font-size:34px;margin:8px 0 18px;line-height:1.15}
@@ -119,7 +121,7 @@ var FIELDS = {
 };
 var PROMPT = {entity:'Entity?',date:'Date?',check:'Check #?',payee:'Payee?',account:'Account?',to_account:'To account?',category:'Category?',amount:'Amount?',memo:'Memo?'};
 var TYPE_LABEL = {expense:'Expense',deposit:'Deposit',transfer:'Transfer'};
-var APP_VERSION = 'v18';
+var APP_VERSION = 'v19';
 // Per-app settings (a separate build may replace this line): storage key prefix, display name, built-in approved memorized list
 var APP = {store:'entry.', name:'Entry', builtinMem:null};
 var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -185,7 +187,11 @@ function $(id){ return document.getElementById(id); }
 
 // ---------- render ----------
 var app = document.getElementById('app');
-function hdr(right){ return '<header><span class="t">'+esc(APP.name)+'</span><span class="s">'+(right||'')+'</span></header>'; }
+function hdr(right){
+  var o=load('owner',''); o=(typeof o==='string'?o:'').trim();
+  var label=o?'<div class="owner">Entry · '+esc(o)+'</div>':'';
+  return '<header><div class="left">'+label+'<span class="t">'+esc(APP.name)+'</span></div><span class="s">'+(right||'')+'</span></header>';
+}
 function render(){ renderInner(); navSync(); }
 function renderInner(){
   gateReset();
@@ -227,12 +233,20 @@ function addImported(list){
   saveMem(); return list.length;
 }
 function markLink(t){ var i=String(t).indexOf('mem='); if(i<0) return; var raw=String(t).slice(i+4).trim(), k=linkKey(raw), d=load('links',[]); if(d.indexOf(k)<0){ d.push(k); save('links',d); } }
+function applyIncoming(t){
+  var data=parseMemData(t), owner=readOwner(data), list=itemsFromMemData(data, false);
+  if(!owner && !list.length) throw new Error('empty');
+  if(owner) save('owner', owner);
+  markLink(t);
+  if(list.length){ var n=addImported(list); return {n:n, msg:'✓ '+n+' added'}; }
+  return {n:0, msg: owner ? '✓ Name saved' : '✓'};
+}
 function pasteMyList(){
   function manual(msg){ listFlash=msg||''; screen='mempaste'; render(); }
   if(!(navigator.clipboard && navigator.clipboard.readText)) return manual();
   navigator.clipboard.readText().then(function(t){
-    var list; try{ list=decodeMemPayload(t); }catch(e){ return manual('What you copied is not the list.'); } markLink(t);
-    var n=addImported(list); listFlash='✓ '+n+' added'; screen='memlist'; render();
+    var r; try{ r=applyIncoming(t); }catch(e){ return manual('What you copied is not the list.'); }
+    listFlash=r.msg; flash=r.msg; screen=r.n?'memlist':'home'; render();
   }, function(){ manual(); });
 }
 function renderMemPaste(){
@@ -242,7 +256,7 @@ function renderMemPaste(){
     '<textarea id="txt" placeholder="Press and hold here" style="min-height:140px;font-size:18px"></textarea><p class="hint" id="err"></p>'+
     '<div class="nav tight"><div class="btns"><button class="b-bk" id="back">Back</button></div></div>';
   listFlash='';
-  function tryIt(){ var t=$('txt').value; if(!t.trim()) return; try{ var n=addImported(decodeMemPayload(t)); markLink(t); listFlash='✓ '+n+' added'; screen='memlist'; render(); }catch(e){ $('err').textContent='That is not the list. Copy the link in WhatsApp and try again.'; } }
+  function tryIt(){ var t=$('txt').value; if(!t.trim()) return; try{ var r=applyIncoming(t); listFlash=r.msg; flash=r.msg; screen=r.n?'memlist':'home'; render(); }catch(e){ $('err').textContent='That is not the list. Copy the link in WhatsApp and try again.'; } }
   $('txt').addEventListener('input', tryIt); $('txt').addEventListener('paste', function(){ setTimeout(tryIt,0); });
   $('back').onclick=function(){ screen='home'; render(); };
 }
@@ -532,7 +546,7 @@ function renderMemSummary(){
   $('cancel').onclick=function(){ draft=null; save('draft',null); screen='memmanage'; render(); };
 }
 // Import an approved list: link with #mem=<base64url JSON>, or paste JSON/base64, or a .json file.
-function decodeMemPayload(txt){
+function parseMemData(txt){
   txt=String(txt||'').trim(); var i=txt.indexOf('mem='); if(i>=0) txt=txt.slice(i+4);
   var data;
   try{ data=JSON.parse(txt); }catch(e){
@@ -540,6 +554,15 @@ function decodeMemPayload(txt){
     var bin=atob(b), bytes=new Uint8Array(bin.length); for(var j=0;j<bin.length;j++) bytes[j]=bin.charCodeAt(j);
     data=JSON.parse(new TextDecoder('utf-8').decode(bytes));
   }
+  return data;
+}
+function readOwner(data){
+  if(!data || typeof data!=='object' || Array.isArray(data) || typeof data.owner!=='string') return '';
+  var o=data.owner.trim().replace(/\s+/g,' ').slice(0,40);
+  if(!o || /[<>]/.test(o)) return '';
+  return o;
+}
+function itemsFromMemData(data, requireItems){
   var arr=Array.isArray(data)?data:(data&&(data.items||data.memorized))||[];
   var out=[];
   arr.forEach(function(x){
@@ -549,8 +572,11 @@ function decodeMemPayload(txt){
     m.name = String(x.name||'').trim().slice(0,60) || memName(m);
     out.push(m);
   });
-  if(!out.length) throw new Error('empty');
+  if(requireItems && !out.length) throw new Error('empty');
   return out;
+}
+function decodeMemPayload(txt){
+  return itemsFromMemData(parseMemData(txt), true);
 }
 function renderMemImport(){
   var h = hdr('Import')+'<h1 class="sm">Import memorized</h1>';
@@ -570,7 +596,7 @@ function renderMemImport(){
     '<div class="btns"><button class="b-go" id="chk">Check</button></div><div class="btns"><label class="b-bk" style="flex:1;text-align:center;padding:14px 6px;border-radius:14px;font-size:19px;font-weight:600">Choose file<input type="file" id="file" accept=".json,application/json,text/plain" style="display:none"></label></div>'+
     '<p class="hint" id="err"></p><div class="nav tight"><div class="btns"><button class="b-bk" id="back">Back</button></div></div>';
   app.innerHTML=h;
-  function tryIt(txt){ try{ pendingImport=decodeMemPayload(txt); renderMemImport(); }catch(e){ $('err').textContent='Could not read that list.'; } }
+  function tryIt(txt){ try{ var data=parseMemData(txt), owner=readOwner(data), list=itemsFromMemData(data,false); if(!owner && !list.length) throw new Error('empty'); if(owner) save('owner', owner); markLink(txt); if(!list.length){ listFlash='✓ Name saved'; flash=listFlash; screen='home'; render(); return; } pendingImport=list; renderMemImport(); }catch(e){ $('err').textContent='Could not read that list.'; } }
   $('chk').onclick=function(){ tryIt($('txt').value); };
   $('file').onchange=function(){ var f=this.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ tryIt(r.result); }; r.readAsText(f); };
   $('back').onclick=function(){ screen='memmanage'; render(); };
@@ -580,13 +606,24 @@ function renderMemImport(){
 function linkKey(raw){ var h=5381; for(var i=0;i<raw.length;i++) h=((h*33)^raw.charCodeAt(i))>>>0; return h.toString(36)+'.'+raw.length; }
 function checkHashImport(){
   if(!/^#mem=/.test(location.hash)) return false;
-  var raw=location.hash.slice(5), key=linkKey(raw), done=load('links',[]), list;
-  try{ list=decodeMemPayload(raw); }catch(e){ try{ history.replaceState(history.state,'',location.pathname+location.search); }catch(e2){} flash='Could not read the memorized list link.'; return false; }
+  var raw=location.hash.slice(5), key=linkKey(raw), done=load('links',[]), data, list, owner;
+  try{
+    data=parseMemData(raw);
+    owner=readOwner(data);
+    list=itemsFromMemData(data, false);
+    if(!owner && !list.length) throw new Error('empty');
+  }catch(e){ try{ history.replaceState(history.state,'',location.pathname+location.search); }catch(e2){} flash='Could not read the memorized list link.'; return false; }
+  if(owner) save('owner', owner);
   var fresh = done.indexOf(key)<0;
-  if(fresh){ var n=addImported(list); done.push(key); save('links',done); listFlash='✓ '+n+' added'; }
+  if(fresh){
+    if(list.length){ var n=addImported(list); listFlash='✓ '+n+' added'; }
+    else if(owner){ listFlash='✓ Name saved'; flash=listFlash; }
+    done.push(key); save('links',done);
+  }
   installCount=list.length;
-  if(isStandalone()) return fresh ? 'memlist' : false;
-  return 'meminstall';
+  if(isStandalone()) return (fresh && list.length) ? 'memlist' : (fresh && owner) ? 'home' : false;
+  if(list.length) return 'meminstall';
+  return (fresh && owner) ? 'home' : false;
 }
 
 // ---------- list & export ----------
